@@ -98,7 +98,7 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
    @Value("${receive.throwException}")
    Boolean throwException;
 
-   @Value("${brokerFailover}")
+   @Value("${receive.brokerFailover}")
    Boolean brokerFailover;
 
    @Value("${counterUpdate}")
@@ -206,16 +206,16 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
             return counter;
          });
 
-//         int DLQCount = 0;
-//         while((msg = jmsTemplate.receive("DLQ")) != null) {
-//            DLQCount++;
-//            log.info("message in DLQ queue: {} - {}", msg.getStringProperty("UUID"), msg.getStringProperty("SEND_COUNTER"));
-//         }
+         //int DLQCount = 0;
+         //while((msg = jmsTemplate.receive("DLQ")) != null) {
+         //  DLQCount++;
+         //  log.info("message in DLQ queue: {} - {}", msg.getStringProperty("UUID"), msg.getStringProperty("SEND_COUNTER"));
+         //}
 
          log.info("Message count at the end - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
          log.info("Message count on source queue: {}", sourceCount);
          log.info("Message count on target queue: {}",targetCount);
-         log.warn("Message count on DLQ - duplicates: {}", DLQCount);
+         log.warn("Message count on DLQ queue: {}", DLQCount);
          //Number of messages on DLQ should be 0 for a seamless failover
 
       } finally {

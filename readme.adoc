@@ -24,7 +24,7 @@ The application is a simple JMS bridge that moves messages from a "source" queue
 
 Steps:
 
-- Two broker instances are started in HA mode with shared storage. The brokers' `max-delivery-attempts` is 3.
+- Two broker instances are started in HA mode with shared storage. The brokers' `max-delivery-attempts` is 7.
 - The application uses the Qpid JMS AMQP client with the following connection string:
 
   `failover:(amqp://localhost:61616,amqp://localhost:61617)?failover.maxReconnectAttempts=16&jms.prefetchPolicy.all=5&jms.forceSyncSend=true`
@@ -46,6 +46,9 @@ See `application.properties` for parameters:
 [options="header",width="100%",align="center"]
 |===
 |Parameter |Example | Notes
+|connection.type              |AMQP or CORE|ConnectionFactory type
+|connection.remoteUrl         |         |Connection string to broker - must match type
+|connection.maxConnections    |1        |Pool size
 |send.count                   |1000     |Message count
 |transaction.mode             |DEFAULT_MESSAGE_LISTENER_CONTAINER or JMS_TRANSACTION_MANAGER| See modes below
 |receive.concurrentConsumers  |20       |Consumers
@@ -59,16 +62,6 @@ See `application.properties` for parameters:
 |shutDownDelay                |10000    |Wait before shutdown (ms)
 |===
 
-
-
-// Actual outcome:
-// - All the messages are moved to the `target` queue witohut message loss, but some messages are duplicated and end up on a message queue.
-
-// Notes:
-// - It's expected that some messages are redelivered again because the transactions are rolled back during a broker failover.
-// - But it's not clear how a message can be redelivered from `source` while it was already delivered to `target` as both the "acknowledgement" and the "send" participates in the same transaction.
-// - The extra redelivery should not even cause a problem - because of Duplicate Detection. It's usually a "silent" exception, but in transacted mode the exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. See example `duplicate-detection-amqp` in the parent directory.
-// - At the end - while all the messages were moved to `target` queue succesfully - we get some "false alarm" messages on the DLQ.
 
 See summary output of the application:
 ```
@@ -88,7 +81,12 @@ The missing or DLQ message ids are also logged with their UUID and order number:
 
 == Different scenarios to try
 
-Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Spring JMS and Artemis.
+Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Spring framework and Qpid JMS client.
+
+[NOTE]
+====
+Using Artemis Core protocol seems to solve the issues described below. `connection.type=CORE`
+====
 
 === Default DefaultMessageListenerContainer
 ```
@@ -103,7 +101,7 @@ Notes:
 
 Outcome:
 
-* Masseges on DLQ. Messages are redelivered despite they were already sent to target queue. Because of transacted send the exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ.
+* Masseges on DLQ. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
 * Many errors and retries based on the logs
 * Sometimes the test execution takes much longer, it had to wait for transaction timeouts on the broker side probably
 
@@ -124,6 +122,7 @@ Outcome:
 
 * Messages on DLQ messages. Less, but similar than in the previous scenario. 
 * Slower as there is no caching
+
 
 === TransactionManager with caching
 ```

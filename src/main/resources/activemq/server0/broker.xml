@@ -94,7 +94,7 @@ under the License.
          <dead-letter-address>DLQ</dead-letter-address>
          <expiry-address>ExpiryQueue</expiry-address>
          <redelivery-delay>0</redelivery-delay>
-         <max-delivery-attempts>3</max-delivery-attempts>
+         <max-delivery-attempts>7</max-delivery-attempts>
          
          <max-size-bytes>-1</max-size-bytes>
          <message-counter-history-day-limit>10</message-counter-history-day-limit>
