@@ -167,6 +167,10 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
             log.info("Message count before listener start - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
             jmsListenerEndpointRegistry.start();
 
+            //Wait until we received 10% of messages before trigger broker failover
+            while (receiveCounter.get() < sendCount/10) {
+               Thread.sleep(100);
+            }
 
             //Broker failover
             if (!noServer && brokerFailover) {
