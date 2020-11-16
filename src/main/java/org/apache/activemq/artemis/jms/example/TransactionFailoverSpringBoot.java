@@ -38,8 +38,6 @@ import org.springframework.jms.config.JmsListenerEndpointRegistry;
 import org.springframework.jms.core.JmsTemplate;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @EnableScheduling
 @SpringBootApplication
@@ -49,21 +47,28 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
 
    private static Process server0;
    private static Process server1;
+   private static Boolean noServer;
    public static void main(String[] args) throws Exception{
 
       try {
-         //Start servers - this is needed before the main run as DefaultMessageListenerContainer tries to get a connection during start
-         server0 = ServerUtil.startServer(args[0], TransactionFailoverSpringBoot.class.getSimpleName() + "0", 0, 5000);
-         server1 = ServerUtil.startServer(args[1], TransactionFailoverSpringBoot.class.getSimpleName() + "1", 1, 5000);
+         log.debug("Args: {} {} {}",args[0], args[1], args[2]);
+         noServer = Boolean.valueOf(args[2]);
+         if (!noServer) {
+            //Start servers - this is needed before the main run as DefaultMessageListenerContainer tries to get a connection during start
+            server0 = ServerUtil.startServer(args[0], TransactionFailoverSpringBoot.class.getSimpleName() + "0", 0, 5000);
+            server1 = ServerUtil.startServer(args[1], TransactionFailoverSpringBoot.class.getSimpleName() + "1", 1, 5000);
+         }
 
          //Main run
          SpringApplication.run(TransactionFailoverSpringBoot.class, args);
 
       } finally {
-         //Stop server
-         log.info("Shut down servers");
-         ServerUtil.killServer(server0);
-         ServerUtil.killServer(server1);
+         if (!noServer) {
+            //Stop server
+            log.info("Shut down servers");
+            ServerUtil.killServer(server0);
+            ServerUtil.killServer(server1);
+         }
          log.info("Done");
       }
    }
@@ -85,6 +90,15 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
 
    @Value("${send.count}")
    Integer sendCount;
+
+   @Value("${send.enabled}")
+   Boolean sendEnabled;
+
+   @Value("${receive.enabled}")
+   Boolean receiveEnabled;
+
+   @Value("${receive.forwardEnabled}")
+   Boolean receiveForwardEnabled;
 
    @Value("${receive.delayBeforeForward}")
    Integer delayBeforeForward;
@@ -111,6 +125,7 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
    private AtomicInteger sendCounter = new AtomicInteger();
    private AtomicInteger receiveForwardedCounter = new AtomicInteger();
    private int receiveCounterLast = 0;
+   private int sendCounterLast = 0;
 
    //Collect sent ids, so we can observe missing.
    Map<String,String> sentUUIDs = new ConcurrentHashMap<>();
@@ -123,56 +138,57 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
    public void run(String... args) throws Exception {
       try {
 
-         //Send messages to queue, before starting receivers
-         for (int i=0; i< sendCount; i++) {
-            String uuid = UUID.randomUUID().toString();
-            String counter = Integer.toString(sendCounter.incrementAndGet());
-            log.debug("Sending: {}", uuid);
+         //Send messages
+         if (sendEnabled) {
+            //Send messages to queue, before starting receivers
+            for (int i = 0; i < sendCount; i++) {
+               String uuid = UUID.randomUUID().toString();
+               String counter = Integer.toString(sendCounter.incrementAndGet());
+               log.debug("Sending: {}", uuid);
 
-            this.jmsTemplate.convertAndSend(sourceQueue, "message: "+uuid, m -> {
-               m.setStringProperty("SEND_COUNTER", counter);
-               m.setStringProperty("UUID", uuid);
-               sentUUIDs.put(uuid,"");
-               return m;
-            });
-            sentUUIDs.put(uuid,counter);
+               this.jmsTemplate.convertAndSend(sourceQueue, "message: " + uuid, m -> {
+                  m.setStringProperty("SEND_COUNTER", counter);
+                  m.setStringProperty("UUID", uuid);
+                  sentUUIDs.put(uuid, "");
+                  return m;
+               });
+               sentUUIDs.put(uuid, counter);
 
+            }
+            log.info("Total sent: {} - {}", sendCounter.get(), sentUUIDs.size());
          }
-         log.info("Total sent: {} - {}",sendCounter.get(), sentUUIDs.size());
 
 
          //Start receiving messages
-         Thread.sleep(1000);
-         log.info("Start listeners");
+         if (receiveEnabled) {
+            Thread.sleep(1000);
+            log.info("Start listeners");
 
-         log.info("Message count before listener start - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
-         jmsListenerEndpointRegistry.start();
+            log.info("Message count before listener start - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
+            jmsListenerEndpointRegistry.start();
 
 
-         //Wait until we received 10% of messages before trigger broker failover
-         while (receiveCounter.get() < sendCount/10) {
-            Thread.sleep(100);
+            //Broker failover
+            if (!noServer && brokerFailover) {
+               ServerUtil.killServer(server0);
+               log.info("Message count after failover - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
+            }
+
+
+            //Wait until we received all of messages, and no more was incoming in the last second
+            while (receiveCounter.get() < sendCount || receiveCounter.get() > receiveCounterLast) {
+               Thread.sleep(counterUpdate);
+            }
+
+            //Wait some before shutdown
+            Thread.sleep(shutDownDelay);
          }
 
-         //Broker failover
-         if (brokerFailover) {
-            ServerUtil.killServer(server0);
-            log.info("Message count after failover - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
-         }
-
-
-         //Wait until we received all of messages, and no more was incoming in the last second
-         while (receiveCounter.get() < sendCount || receiveCounter.get() > receiveCounterLast) {
-            Thread.sleep(counterUpdate);
-         }
-
-
-         Thread.sleep(shutDownDelay);
          log.info("Counting queue sizes...");
-
          jmsTemplate.setReceiveTimeout(1000);
          Message msg;
 
+         //Source queue is expectd not to have any messages
          int sourceCount = 0;
          while((msg = jmsTemplate.receive(sourceQueue)) != null) {
             sourceCount++;
@@ -206,12 +222,6 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
             return counter;
          });
 
-         //int DLQCount = 0;
-         //while((msg = jmsTemplate.receive("DLQ")) != null) {
-         //  DLQCount++;
-         //  log.info("message in DLQ queue: {} - {}", msg.getStringProperty("UUID"), msg.getStringProperty("SEND_COUNTER"));
-         //}
-
          log.info("Message count at the end - sent: {}, received: {}, forwarded: {}", sendCounter.get(), receiveCounter.get(), receiveForwardedCounter.get());
          log.info("Message count on source queue: {}", sourceCount);
          log.info("Message count on target queue: {}",targetCount);
@@ -230,10 +240,13 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
     */
    @Scheduled(fixedDelayString = "${counterUpdate}")
    public void reportCurrentTime() {
-      int current = receiveCounter.get();
-      int diff = current - receiveCounterLast;
-      receiveCounterLast = current;
-      log.debug("Method calls: sent: {}, received: {} ({}/s), forwarded: {}", sendCounter.get(), current, diff, receiveForwardedCounter.get());
+      int receiveCurrent = receiveCounter.get();
+      int receiveDiff = receiveCurrent - receiveCounterLast;
+      receiveCounterLast = receiveCurrent;
+      int sendCurrent = sendCounter.get();
+      int sendDiff = sendCurrent - sendCounterLast;
+      sendCounterLast = sendCurrent;
+      log.debug("Messages - sent: {} ({}/s), received: {} ({}/s), forwarded: {}", sendCurrent, sendDiff, receiveCurrent, receiveDiff, receiveForwardedCounter.get());
    }
 
 
@@ -250,20 +263,22 @@ public class TransactionFailoverSpringBoot implements CommandLineRunner {
       }
 
       //Send message to target queue
-      Thread.sleep(delayBeforeForward);
+      if (receiveForwardEnabled) {
+         Thread.sleep(delayBeforeForward);
 
-      jmsTemplate.convertAndSend(targetQueue, text, m -> {
-         m.setStringProperty("SEND_COUNTER", counter);
-         m.setStringProperty("UUID", UUID);
-         if (addAmqDuplId) {
-            m.setStringProperty("_AMQ_DUPL_ID", UUID);
-         }
-         return m;
-      });
-      log.debug("Forwarded: {} - {}", UUID, counter);
-      receiveForwardedCounter.incrementAndGet();
+         jmsTemplate.convertAndSend(targetQueue, text, m -> {
+            m.setStringProperty("SEND_COUNTER", counter);
+            m.setStringProperty("UUID", UUID);
+            if (addAmqDuplId) {
+               m.setStringProperty("_AMQ_DUPL_ID", UUID);
+            }
+            return m;
+         });
+         log.debug("Forwarded: {} - {}", UUID, counter);
+         receiveForwardedCounter.incrementAndGet();
+      }
 
-      //Optianally throw exception to test transaction boundaries
+      //Optionally throw exception to test transaction boundaries
       if (throwException) {
          throw new RuntimeException("Exception for uuid:" + UUID);
       }

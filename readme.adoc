@@ -50,8 +50,11 @@ See `application.properties` for parameters:
 |connection.remoteUrl         |         |Connection string to broker - must match type
 |connection.maxConnections    |1        |Pool size
 |send.count                   |1000     |Message count
+|send.enabled                 |true     |Send messages to `source` queue
 |transaction.mode             |DEFAULT_MESSAGE_LISTENER_CONTAINER or JMS_TRANSACTION_MANAGER| See modes below
+|receive.enabled              |true     |Receive messages from source queue
 |receive.concurrentConsumers  |20       |Consumers
+|receive.forwardEnable        |true     |Forward messaged to `target` queue
 |receive.addAmqDuplId         |true     |Add _AMQ_DUPL_ID header
 |receive.throwException       |false    |Throw exception during message - test transactions
 |receive.delayBeforeForward   |0        |Optional delay (ms)
@@ -78,6 +81,8 @@ The missing or DLQ message ids are also logged with their UUID and order number:
 34658 [main] [INFO] TransactionFailoverSpringBoot - Message in DLQ: 5e213243-d579-4db7-9ef3-a5233e3fad63 - 128
 34658 [main] [INFO] TransactionFailoverSpringBoot - Message missing:: bd1ec840-909d-41db-a51a-e160d83a09b5 - 129
 ```
+
+The example application creates and starts two Artemis server instances by default under `target/server0` and `target/server1` directories. Use the _noServer_ Maven profile (`mvn -PnoSever clean install`) to skip this, so you need to start one or two a broker instances yourself.
 
 == Different scenarios to try
 
