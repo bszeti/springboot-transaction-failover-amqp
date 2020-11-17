@@ -82,7 +82,7 @@ under the License.
       <dependency>
           <groupId>org.apache.qpid</groupId>
           <artifactId>qpid-jms-client</artifactId>
-          <version>0.54.0</version>
+          <version>0.55.0-SNAPSHOT</version>
       </dependency>
       <dependency>
          <groupId>org.messaginghub</groupId>
@@ -126,7 +126,7 @@ under the License.
                      <goal>runClient</goal>
                   </goals>
                   <configuration>
-                     <clientClass>org.apache.activemq.artemis.jms.example.TransactionFailoverSpringBoot</clientClass>
+                     <clientClass>org.apache.activemq.artemis.jms.example.TransactionFailoverJMS</clientClass>
                      <args>
                         <param>${basedir}/target/server0</param>
                         <param>${basedir}/target/server1</param>
