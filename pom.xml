@@ -35,11 +35,12 @@ under the License.
       <!-- Point this to your real ARTEMIS_HOME. E.g.: mvn clean install -Dactivemq.basedir=/Users/bszeti/tools/amq-broker-7.7.0 -->
       <activemq.basedir>${project.basedir}/..</activemq.basedir>
 
-<!--      <springboot.version>2.1.5.RELEASE</springboot.version>-->
       <springboot.version>2.1.18.RELEASE</springboot.version>
 <!--      <springboot.version>2.2.11.RELEASE</springboot.version>-->
 <!--      <springboot.version>2.3.5.RELEASE</springboot.version>-->
       <artemis.version>2.13.0</artemis.version>
+      <qpid-jms.version>0.55.0-SNAPSHOT</qpid-jms.version>
+      <pooled-jms.version>1.0.5</pooled-jms.version>
 
       <!-- if enabled, the servers are not created or managed -->
       <noServer>false</noServer>
@@ -56,6 +57,7 @@ under the License.
             <scope>import</scope>
          </dependency>
       </dependencies>
+
    </dependencyManagement>
 
 
@@ -78,16 +80,15 @@ under the License.
          <artifactId>artemis-cli</artifactId>
          <version>${artemis.version}</version>
       </dependency>
-
       <dependency>
           <groupId>org.apache.qpid</groupId>
           <artifactId>qpid-jms-client</artifactId>
-          <version>0.54.0</version>
+          <version>${qpid-jms.version}</version>
       </dependency>
       <dependency>
          <groupId>org.messaginghub</groupId>
          <artifactId>pooled-jms</artifactId>
-         <version>1.0.5</version>
+         <version>${pooled-jms.version}</version>
       </dependency>
    </dependencies>
 

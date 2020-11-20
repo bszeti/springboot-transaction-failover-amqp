@@ -3,6 +3,11 @@
 This example tests an HA broker failover while a SpringBoot application actively receives and sends messags to the broker. 
 On the client side we use the Qpid JMS client for Artemis AMQP endpoint.
 
+[NOTE]
+====
+TL;DR: An issue was identified with the Qpid JMS AMQP client related to transactional failovers. It's fixed in version 0.55.0.
+====
+
 To run the example we need Apache Artemis donwloaded and set its path in the `activemq.basedir` propety for Maven. For example:
 
 `export ARTEMIS_HOME=/Users/bszeti/tools/amq-broker-7.7.0`
@@ -38,7 +43,7 @@ Steps:
 - The application is shut down when no more messages are received from `source`. Before that messages are counted on the queues.
 
 Expected outcome:
-- All the messages are moved to the `target` queue witohut message loss or duplicates.
+- All the messages are moved to the `target` queue without message loss or duplicates.
 
 See `application.properties` for parameters:
 
@@ -82,15 +87,17 @@ The missing or DLQ message ids are also logged with their UUID and order number:
 34658 [main] [INFO] TransactionFailoverSpringBoot - Message missing:: bd1ec840-909d-41db-a51a-e160d83a09b5 - 129
 ```
 
-The example application creates and starts two Artemis server instances by default under `target/server0` and `target/server1` directories. Use the _noServer_ Maven profile (`mvn -PnoSever clean install`) to skip this, so you need to start one or two a broker instances yourself.
+The example application creates and starts two Artemis server instances by default under `target/server0` and `target/server1` directories.
+Use the _noServer_ Maven profile (`mvn -PnoSever clean install`) to skip this, so you need to start/stop the broker instances yourself.
 
 == Different scenarios to try
 
-Some issues were found with all of these settings. It's not clear how the expected outcome could be achieved with Spring framework and Qpid JMS client.
+Different issues were found with different settings. A fix applied in Qpid JMS client version 0.55.0 solved the "DLQ messages" problem.
+The other issue - messages loss - is related to Spring framework (see _TransactionManager with caching_) and it may still be valid.
 
 [NOTE]
 ====
-Using Artemis Core protocol seems to solve the issues described below. `connection.type=CORE`
+The issues described below are adhoc - based on when exactly the broker failover happens - and the test should be run several times to observe or validate.
 ====
 
 === Default DefaultMessageListenerContainer
@@ -106,9 +113,8 @@ Notes:
 
 Outcome:
 
-* Masseges on DLQ. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
-* Many errors and retries based on the logs
-* Sometimes the test execution takes much longer, it had to wait for transaction timeouts on the broker side probably
+* Messages on DLQ. Messages are redelivered despite they were already sent to target queue (see https://issues.redhat.com/browse/ENTMQCL-2339). Because of transacted send the duplicate exception reaches the client and causes message redelivery until _max-delivery-attempts_ is reached and the broker drops the message on the DLQ. (see https://issues.redhat.com/browse/ENTMQBR-4235)
+* Works with `qpid-jms-client:0.55.0` or with CORE protocol.
 
 === TransactionManager with no caching
 ```
@@ -127,6 +133,7 @@ Outcome:
 
 * Messages on DLQ messages. Less, but similar than in the previous scenario. 
 * Slower as there is no caching
+* Works with `qpid-jms-client:0.55.0` or with CORE protocol.
 
 
 === TransactionManager with caching
@@ -144,3 +151,5 @@ Notes:
 Outcome:
 
 * Message loss during failover.
+
+
